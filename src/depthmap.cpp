@@ -16,6 +16,9 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <rmd/depthmap.h>
+#include <opencv2/calib3d.hpp> //use cv::initUndistortRectifyMap
+#include <opencv2/imgproc/types_c.h> //use CV_INTER_LINEAR, CV_GRAY2BGR
+
 
 rmd::Depthmap::Depthmap(size_t width,
                         size_t height,

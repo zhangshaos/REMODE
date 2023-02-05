@@ -16,6 +16,7 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "dataset.h"
+#include <opencv2/imgcodecs/legacy/constants_c.h> //use CV_LOAD_IMAGE_GRAYSCALE
 
 const std::string & rmd::test::DatasetEntry::getImageFileName() const
 {

@@ -13,193 +13,129 @@
 # FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
 #
 # You should have received a copy of the GNU General Public License
-# along with this program.  If not, see <http://www.gnu.org/licenses/>.
+# along with this program.  if not, see <http://www.gnu.org/licenses/>.
 
-SET(PROJECT_NAME rpg_open_remode)
-CMAKE_MINIMUM_REQUIRED(VERSION 2.8.3)
-PROJECT(${PROJECT_NAME})
-SET(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${PROJECT_SOURCE_DIR}/CMakeModules/")
-SET(CMAKE_BUILD_TYPE Release) # Release, RelWithDebInfo
+cmake_minimum_required(VERSION 3.18)
+if(NOT DEFINED CMAKE_CUDA_ARCHITECTURES)
+  set(CMAKE_CUDA_ARCHITECTURES 86) #根据自己的GPU版本设置
+endif()
+project(REMODE LANGUAGES CXX CUDA)
 
-find_package(CUDA REQUIRED)
-SET(CUDA_NVCC_FLAGS ${CUDA_NVCC_FLAGS};-O3 -use_fast_math)
+set(CMAKE_BUILD_TYPE Debug) # Release, RelWithDebInfo
+set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${PROJECT_SOURCE_DIR}/CMakeModules/")
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-# Specify compute capability
-#list(APPEND CUDA_NVCC_FLAGS -arch=sm_30)
-#list(APPEND CUDA_NVCC_FLAGS -gencode arch=compute_30,code=sm_30)
-
-SET(CUDA_PROPAGATE_HOST_FLAGS OFF)
-
-SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -O3")
-IF(CMAKE_COMPILER_IS_GNUCC)
-  SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++0x")
-ELSE()
-  SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11")
-ENDIF()
-
-option(BUILD_ROS_NODE "Build ROS node" ON)
-if(BUILD_ROS_NODE)
-  ADD_DEFINITIONS(-DBUILD_ROS_NODE)
-endif(BUILD_ROS_NODE)
-
-option(BUILD_TESTS "Build test programs" ON)
-if(BUILD_TESTS)
-  ADD_DEFINITIONS(-DRMD_BUILD_TESTS)
-endif(BUILD_TESTS)
+set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${PROJECT_SOURCE_DIR}/bin)
+set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${PROJECT_SOURCE_DIR}/lib)
+set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${PROJECT_SOURCE_DIR}/lib)
 
 # NCC patch size (must be odd integer, typical values: 3, 5, 7)
-ADD_DEFINITIONS(-DRMD_CORR_PATCH_SIDE=5)
+add_definitions(-DRMD_CORR_PATCH_SIDE=5)
 # Maximum extent of epipolar line search in pixels
-ADD_DEFINITIONS(-DRMD_MAX_EXTENT_EPIPOLAR_SEARCH=100)
+add_definitions(-DRMD_MAX_EXTENT_EPIPOLAR_SEARCH=100)
+add_definitions(-D_USE_MATH_DEFINES)
 
+#############################
+#     find dependents       #
+#############################
+find_package(CUDA  REQUIRED) #use cuda_runtime.h
 find_package(OpenCV REQUIRED)
 find_package(Eigen REQUIRED)
 find_package(Boost REQUIRED COMPONENTS system filesystem)
 
-if(BUILD_ROS_NODE)
-  find_package(catkin REQUIRED COMPONENTS
-    roscpp roslib cmake_modules svo_msgs cv_bridge image_transport vikit_ros pcl_ros)
-  catkin_package(
-      DEPENDS OpenCV Eigen Boost
-      CATKIN_DEPENDS roscpp roslib svo_msgs image_transport vikit_ros pcl_ros
-      INCLUDE_DIRS include
-      LIBRARIES rpg_open_remode rpg_open_remode_cuda
-  )
-else()
-  set(EXECUTABLE_OUTPUT_PATH ${PROJECT_SOURCE_DIR}/bin)
-  set(LIBRARY_OUTPUT_PATH ${PROJECT_SOURCE_DIR}/lib)
-endif(BUILD_ROS_NODE)
-
 include_directories(
   include
+  ${CUDA_INCLUDE_DIRS}
   ${OpenCV_INCLUDE_DIRS}
   ${Eigen_INCLUDE_DIRS}
-  ${Boost_INCLUDE_DIRS}
-)
+  ${Boost_INCLUDE_DIRS})
 
-# Set link libraries
+# set link libraries
 list(APPEND LINK_LIBS
-  ${OpenCV_LIBS}
-  ${Boost_LIBRARIES}
-)
+     ${OpenCV_LIBS}
+     ${Boost_LIBRARIES})
 
-if(BUILD_ROS_NODE)
-  include_directories(${catkin_INCLUDE_DIRS})
-  list(APPEND LINK_LIBS ${catkin_LIBRARIES})
-endif(BUILD_ROS_NODE)
+#################################
+#      Crate main library       #
+#################################
 
-# Set CUDA sourcefiles
+# set CUDA sourcefiles
 list(APPEND CU_SOURCE_FILES
-    src/check_cuda_device.cu
-    src/seed_matrix.cu
-    src/depthmap_denoiser.cu
-    src/reduction.cu
-)
+     src/check_cuda_device.cu
+     src/seed_matrix.cu
+     src/depthmap_denoiser.cu
+     src/reduction.cu)
 
-# Set sourcefiles
+# set sourcefiles
 list(APPEND SOURCE_FILES
-    src/depthmap.cpp
-)
+     src/depthmap.cpp)
 
-CUDA_ADD_LIBRARY(
-    rpg_open_remode_cuda
-    ${CU_SOURCE_FILES}
-)
+add_library(REMODE_CUDA STATIC ${CU_SOURCE_FILES})
+#target_compile_options(REMODE_CUDA PUBLIC
+#        "$<$<AND:$<COMPILE_LANGUAGE:CXX>,$<CXX_COMPILER_ID:MSVC>>:/MP;/bigobj;/utf-8>")
+#set_target_properties(REMODE_CUDA PROPERTIES CUDA_SEPARABLE_COMPILATION ON)
 
-ADD_LIBRARY(
-    rpg_open_remode
-    ${SOURCE_FILES}
-)
+add_library(REMODE STATIC ${SOURCE_FILES})
+#target_compile_options(REMODE PUBLIC
+#        "$<$<AND:$<COMPILE_LANGUAGE:CXX>,$<CXX_COMPILER_ID:MSVC>>:/MP;/bigobj;/utf-8>")
+#set_target_properties(REMODE PROPERTIES CUDA_SEPARABLE_COMPILATION ON)
+target_link_libraries(REMODE PUBLIC ${LINK_LIBS})
 
-target_link_libraries(
-    rpg_open_remode
-    ${LINK_LIBS}
-)
+################################
+#       Test on dataset        #
+################################
+add_executable(dataset_main
+        test/dataset_main.cpp
+        test/dataset.cpp)
+#target_compile_options(dataset_main PUBLIC
+#        "$<$<AND:$<COMPILE_LANGUAGE:CXX>,$<CXX_COMPILER_ID:MSVC>>:/MP;/bigobj;/utf-8>")
+#set_target_properties(dataset_main PROPERTIES CUDA_SEPARABLE_COMPILATION ON)
+target_link_libraries(dataset_main PRIVATE
+                      REMODE
+                      REMODE_CUDA)
 
-if(BUILD_ROS_NODE)
-# Build the ROS node
-add_executable(
-  depthmap_node
-  src/depthmap_node.cpp
-  src/publisher.cpp
-  src/main_ros.cpp
-)
-target_link_libraries(
-  depthmap_node
-  rpg_open_remode
-  rpg_open_remode_cuda
-)
-# Build a node to publish the dataset
-add_executable(
-  dataset_publisher
-  test/dataset.cpp
-  test/publish_dataset.cpp
-)
-target_link_libraries(
-  dataset_publisher
-  ${LINK_LIBS}
-)
-endif(BUILD_ROS_NODE)
+##################
+#    单元测试     #
+#################
+option(BUILD_TESTS "Build test programs" OFF)
 
-## Test on dataset
-add_executable(
-    dataset_main
-    test/dataset_main.cpp
-    test/dataset.cpp
-)
-
-target_link_libraries(
-    dataset_main
-    rpg_open_remode
-    rpg_open_remode_cuda
-)
-
-# GTest
 if(BUILD_TESTS)
-enable_testing()
-find_package(GTest REQUIRED)
-# Accepts the following variable as input:
-# GTEST_ROOT - (as a CMake or environment variable)
-#              The root directory of the gtest install prefix
+  add_definitions(-DRMD_BUILD_TESTS)
+  enable_testing()
+  find_package(GTest CONFIG REQUIRED)
 
-include_directories(${GTEST_ROOT}/include)
-list(APPEND GTEST_LINK_LIBS
-  ${GTEST_BOTH_LIBRARIES}
-  pthread
-)
+  add_library(REMODE_test STATIC
+              test/copy.cu
+              test/sobel.cu)
+#  target_compile_options(REMODE_test PUBLIC
+#          "$<$<AND:$<COMPILE_LANGUAGE:CXX>,$<CXX_COMPILER_ID:MSVC>>:/MP;/bigobj;/utf-8>")
+#  set_target_properties(REMODE_test PROPERTIES CUDA_SEPARABLE_COMPILATION ON)
 
-CUDA_ADD_LIBRARY(
-    rpg_open_remode_test
-    test/copy.cu
-    test/sobel.cu
-)
+  # set source files for the tests
+  list(APPEND TEST_SOURCE_FILES
+       test/device_image_test.cpp
+       test/seed_matrix_test.cpp
+       test/main_test.cpp
+       test/dataset.cpp
+       test/epipolar_test.cpp
+       test/reduction_test.cpp)
 
-# Set sourcefiles for the tests
-list(APPEND TEST_SOURCE_FILES
-  test/device_image_test.cpp
-  test/seed_matrix_test.cpp
-  test/main_test.cpp
-  test/dataset.cpp
-  test/epipolar_test.cpp
-  test/reduction_test.cpp
-)
+  add_executable(all_tests ${TEST_SOURCE_FILES})
+#  target_compile_options(all_test PUBLIC
+#          "$<$<AND:$<COMPILE_LANGUAGE:CXX>,$<CXX_COMPILER_ID:MSVC>>:/MP;/bigobj;/utf-8>")
+#  set_target_properties(all_test PROPERTIES CUDA_SEPARABLE_COMPILATION ON)
+  target_link_libraries(all_tests PRIVATE
+                        REMODE
+                        REMODE_CUDA
+                        REMODE_test
+                        GTest::gmock
+                        GTest::gtest
+                        GTest::gmock_main
+                        GTest::gtest_main)
 
-add_executable(
-  all_tests
-  ${TEST_SOURCE_FILES}
-)
-
-target_link_libraries(
-  all_tests
-  rpg_open_remode
-  rpg_open_remode_cuda
-  rpg_open_remode_test
-  ${GTEST_LINK_LIBS}
-)
-
-# Allow run of 'make test'
-add_test(
-  RMDCuTests
-  all_tests --gtest_repeat=2
-)
+  # Allow run of 'make test'
+  add_test(
+    RMDCuTests
+    all_tests --gtest_repeat=2)
 endif(BUILD_TESTS)
